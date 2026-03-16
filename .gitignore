@@ -1,0 +1,14 @@
+# data files - too large for github
+data/raw/
+data/tokenized/
+
+# model weights
+checkpoints/
+
+# python cache
+__pycache__/
+*.pyc
+.conda/
+
+# vs code
+.vscode/
