@@ -30,18 +30,3 @@ print(f"Tokenizer saved to {save_dir}/")
 print(f"  vocab.json  — {os.path.getsize(f'{save_dir}/vocab.json') / 1e3:.1f} KB")
 print(f"  merges.txt  — {os.path.getsize(f'{save_dir}/merges.txt') / 1e3:.1f} KB")
 
-#testing the tokenizer
-
-print("\nTokenization test:")
-test_sentences = [
-    "The patient presented with acute myocardial infarction.",
-    "Immunoglobulin levels were significantly elevated.",
-    "Acetylcholinesterase inhibitors reduce symptoms.",
-]
-
-for sentence in test_sentences:
-    encoded = tokenizer.encode(sentence)
-    print(f"\nInput:  {sentence}")
-    print(f"Tokens: {encoded.tokens}")
-    print(f"IDs:    {encoded.ids}")
-    print(f"Count:  {len(encoded.ids)} tokens")
