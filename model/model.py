@@ -55,3 +55,40 @@ class RotaryEmbedding(nn.Module):
         q_rot = q * cos + self.rotate_half(q) * sin
         k_rot = k * cos + self.rotate_half(k) * sin
         return q_rot, k_rot
+    
+class GroupedQueryAttention(nn.Module):
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.n_heads_q = config.n_heads_q
+        self.n_heads_kv = config.n_heads_kv
+        self.head_dim = config.head_dim
+        self.group_size = config.n_heads_q // config.n_heads_kv
+
+        self.W_q = nn.Linear(config.hidden_dim, config.n_heads_q * config.head_dim, bias=False)
+        self.W_k = nn.Linear(config.hidden_dim, config.n_heads_kv * config.head_dim, bias=False)
+        self.W_v = nn.Linear(config.hidden_dim, config.n_heads_kv * config.head_dim, bias=False)
+        self.W_o = nn.Linear(config.n_heads_q * config.head_dim, config.hidden_dim, bias=False)
+
+        self.rope = RotaryEmbedding(config.head_dim, config.context_length)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch, seq_len, _ = x.shape
+
+        q = self.W_q(x)
+        k = self.W_k(x)
+        v = self.W_v(x)
+
+        q = q.view(batch, seq_len, self.n_heads_q, self.head_dim).transpose(1, 2)
+        k = k.view(batch, seq_len, self.n_heads_kv, self.head_dim).transpose(1, 2)
+        v = v.view(batch, seq_len, self.n_heads_kv, self.head_dim).transpose(1, 2)
+
+        q, k = self.rope(q, k)
+
+        k = torch.repeat_interleave(k, self.group_size, dim=1)
+        v = torch.repeat_interleave(v, self.group_size, dim=1)
+
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+
+        out = out.transpose(1, 2).contiguous().view(batch, seq_len, self.n_heads_q * self.head_dim)
+        return self.W_o(out)
+    
