@@ -92,3 +92,12 @@ class GroupedQueryAttention(nn.Module):
         out = out.transpose(1, 2).contiguous().view(batch, seq_len, self.n_heads_q * self.head_dim)
         return self.W_o(out)
     
+class SwiGLUFFN(nn.Module):
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.W1 = nn.Linear(config.hidden_dim, config.ffn_intermediate, bias=False)
+        self.W2 = nn.Linear(config.ffn_intermediate, config.hidden_dim, bias=False)
+        self.W3 = nn.Linear(config.hidden_dim, config.ffn_intermediate, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.W2(F.silu(self.W3(x)) * self.W1(x))
