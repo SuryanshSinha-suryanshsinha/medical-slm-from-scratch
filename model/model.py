@@ -101,3 +101,20 @@ class SwiGLUFFN(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.W2(F.silu(self.W3(x)) * self.W1(x))
+    
+class TransformerBlock(nn.Module):
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.norm1 = RMSNorm(config.hidden_dim, config.norm_eps)
+        self.norm2 = RMSNorm(config.hidden_dim, config.norm_eps)
+        self.attention = GroupedQueryAttention(config)
+        self.ffn = SwiGLUFFN(config)
+
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.attention(self.norm1(x))
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return checkpoint(self._forward, x, use_reentrant=False)
+
