@@ -118,3 +118,34 @@ class TransformerBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return checkpoint(self._forward, x, use_reentrant=False)
 
+class MedSLM(nn.Module):
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.config = config
+        self.embedding = nn.Embedding(config.vocab_size, config.hidden_dim)
+        self.layers = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layers)])
+        self.final_norm = RMSNorm(config.hidden_dim, config.norm_eps)
+        self.lm_head = nn.Linear(config.hidden_dim, config.vocab_size, bias=False)
+        self.lm_head.weight = self.embedding.weight
+        self._init_weights()
+
+    def _init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                std = 0.02
+                if hasattr(module, 'is_residual_projection'):
+                    std = 0.02 / math.sqrt(2 * self.config.n_layers)
+                nn.init.normal_(module.weight, mean=0.0, std=std)
+            elif isinstance(module, nn.Embedding):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        x = self.embedding(token_ids)
+        for layer in self.layers:
+            x = layer(x)
+        x = self.final_norm(x)
+        return self.lm_head(x)
+
+    def count_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
