@@ -9,6 +9,7 @@ from torch.cuda.amp import GradScaler
 from contextlib import nullcontext
 from model.model import ModelConfig, MedSLM
 from dataclasses import dataclass
+import torch.nn.functional as F
 
 @dataclass
 class TrainingConfig:
