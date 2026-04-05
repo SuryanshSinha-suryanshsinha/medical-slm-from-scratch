@@ -124,10 +124,14 @@ pip install transformers tokenizers accelerate wandb tqdm numpy
 ---
 
 ## Project Structure
+```
 slm_medical/
 ├── data/
-│   ├── raw/pubmed_abstracts.txt
-│   └── tokenized/train.bin + val.bin
+│   ├── raw/
+│   │   └── pubmed_abstracts.txt
+│   └── tokenized/
+│       ├── train.bin
+│       └── val.bin
 ├── tokenizer/
 │   ├── vocab.json
 │   └── merges.txt
@@ -140,8 +144,7 @@ slm_medical/
 ├── download_data.py
 ├── train_tokenizer.py
 └── prepare_data.py
-
----
+```
 
 ## About
 
