@@ -62,3 +62,20 @@ def get_lr(step: int, cfg: TrainingConfig) -> float:
         return cfg.lr * (step / cfg.warmup_steps)
     progress = (step - cfg.warmup_steps) / (cfg.max_steps - cfg.warmup_steps)
     return cfg.lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+def build_optimizer(model: MedSLM, cfg: TrainingConfig):
+    decay_params = [p for n, p in model.named_parameters() if p.dim() >= 2]
+    nodecay_params = [p for n, p in model.named_parameters() if p.dim() < 2]
+
+    param_groups = [
+        {'params': decay_params,   'weight_decay': cfg.weight_decay},
+        {'params': nodecay_params, 'weight_decay': 0.0}
+    ]
+
+    num_decay = sum(p.numel() for p in decay_params)
+    num_nodecay = sum(p.numel() for p in nodecay_params)
+    print(f"Decay params: {num_decay:,} | No-decay params: {num_nodecay:,}")
+
+    optimizer = torch.optim.AdamW(param_groups, lr=cfg.lr, betas=cfg.betas)
+    return optimizer
+
