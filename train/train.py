@@ -79,3 +79,26 @@ def build_optimizer(model: MedSLM, cfg: TrainingConfig):
     optimizer = torch.optim.AdamW(param_groups, lr=cfg.lr, betas=cfg.betas)
     return optimizer
 
+def train_step(model, optimizer, scaler, loader, cfg, ctx):
+    model.train()
+    total_loss = 0.0
+
+    for accum_step in range(cfg.grad_accum_steps):
+        x, y = loader.get_batch()
+        with ctx:
+            logits = model(x)
+            loss = F.cross_entropy(
+                logits.view(-1, cfg.model_config.vocab_size),
+                y.view(-1)
+            ) / cfg.grad_accum_steps
+        scaler.scale(loss).backward()
+        total_loss += loss.item()
+
+    scaler.unscale_(optimizer)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+    scaler.step(optimizer)
+    scaler.update()
+    optimizer.zero_grad(set_to_none=True)
+
+    return total_loss
+
