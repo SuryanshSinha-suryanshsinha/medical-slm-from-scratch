@@ -72,6 +72,8 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
 `MedSLM` — full decoder-only model, weight tying between embedding and LM head
 
+---
+
 **Parameter breakdown:**
 Embedding table:      16,384,000
 20 × TransformerBlock:
@@ -84,6 +86,8 @@ Final RMSNorm:               512
 LM Head (weight tied):         0
 ─────────────────────────────────
 Total:                92,426,752
+
+---
 
 ---
 
@@ -107,8 +111,8 @@ Total:                92,426,752
 
 ## Hardware
 
-- RTX 5070 Laptop, 8GB VRAM
-- Ryzen AI 9 HX 370, 24GB RAM, Windows 11
+- RTX 5070 (mobile), 8GB VRAM
+- Ryzen 9 8940hx, 24GB RAM
 - PyTorch 2.12.0.dev+cu128, bf16 supported
 
 ---
