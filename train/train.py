@@ -103,3 +103,65 @@ def train_step(model, optimizer, scaler, loader, cfg, ctx):
 
     return total_loss
 
+def train(cfg: TrainingConfig):
+    os.makedirs(cfg.checkpoint_dir, exist_ok=True)
+    device = cfg.device
+    dtype = torch.bfloat16 if cfg.dtype == 'bfloat16' else torch.float32
+    ctx = torch.amp.autocast(device_type='cuda', dtype=dtype)
+    scaler = GradScaler()
+
+    model = MedSLM(cfg.model_config).to(device)
+    optimizer = build_optimizer(model, cfg)
+
+    train_loader = DataLoader(cfg.data_dir, 'train', cfg.batch_size, cfg.model_config.context_length, device)
+    val_loader   = DataLoader(cfg.data_dir, 'val',   cfg.batch_size, cfg.model_config.context_length, device)
+
+    wandb.init(project='medslm', name=cfg.run_name, config=cfg.__dict__)
+
+    print(f"Model parameters: {model.count_parameters():,}")
+    print(f"Training for {cfg.max_steps} steps")
+    print(f"Effective batch size: {cfg.batch_size * cfg.grad_accum_steps}")
+
+    t0 = time.time()
+
+    for step in range(cfg.max_steps):
+        lr = get_lr(step, cfg)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+
+        loss = train_step(model, optimizer, scaler, train_loader, cfg, ctx)
+
+        if step % cfg.log_every == 0:
+            t1 = time.time()
+            dt = t1 - t0
+            t0 = t1
+            grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+            print(f"step {step:5d} | loss {loss:.4f} | lr {lr:.2e} | dt {dt:.2f}s")
+            wandb.log({'train/loss': loss, 'train/lr': lr, 'train/grad_norm': grad_norm}, step=step)
+
+        if step % cfg.eval_every == 0:
+            val_loss, val_ppl = evaluate(model, val_loader, cfg, ctx)
+            print(f"  val loss {val_loss:.4f} | perplexity {val_ppl:.2f}")
+            wandb.log({'val/loss': val_loss, 'val/perplexity': val_ppl}, step=step)
+
+        if step % cfg.save_every == 0 and step > 0:
+            ckpt_path = os.path.join(cfg.checkpoint_dir, f'ckpt_step{step}.pt')
+            torch.save({
+                'step':                 step,
+                'model_state_dict':     model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss':                 loss,
+                'config':               cfg.model_config
+            }, ckpt_path)
+            print(f"  checkpoint saved → {ckpt_path}")
+
+    final_path = os.path.join(cfg.checkpoint_dir, 'medslm_final.pt')
+    torch.save({'model_state_dict': model.state_dict(), 'config': cfg.model_config}, final_path)
+    print(f"Training complete. Final model saved → {final_path}")
+    wandb.finish()
+
+
+if __name__ == '__main__':
+    model_cfg = ModelConfig()
+    cfg = TrainingConfig(model_config=model_cfg)
+    train(cfg)
