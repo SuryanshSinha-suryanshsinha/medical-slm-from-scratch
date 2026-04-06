@@ -103,6 +103,25 @@ def train_step(model, optimizer, scaler, loader, cfg, ctx):
 
     return total_loss
 
+@torch.no_grad()
+def evaluate(model, loader, cfg, ctx, num_batches=20):
+    model.eval()
+    total_loss = 0.0
+
+    for _ in range(num_batches):
+        x, y = loader.get_batch()
+        with ctx:
+            logits = model(x)
+            loss = F.cross_entropy(
+                logits.view(-1, cfg.model_config.vocab_size),
+                y.view(-1)
+            )
+        total_loss += loss.item()
+
+    avg_loss = total_loss / num_batches
+    perplexity = math.exp(avg_loss)
+    return avg_loss, perplexity
+
 def train(cfg: TrainingConfig):
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
     device = cfg.device
