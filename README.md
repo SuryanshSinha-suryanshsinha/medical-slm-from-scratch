@@ -73,9 +73,6 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 `MedSLM` — full decoder-only model, weight tying between embedding and LM head
 
 **Parameter breakdown:**
-
----
-
 Embedding table:       8,192,000
 12 × TransformerBlock:
 Attention (GQA):       196,608
@@ -140,9 +137,6 @@ pip install transformers tokenizers accelerate wandb tqdm numpy
 ---
 
 ## Project Structure
-
----
-
 slm_medical/
 ├── data/
 │   ├── raw/
