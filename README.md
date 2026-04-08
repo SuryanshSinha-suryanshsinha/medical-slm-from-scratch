@@ -1,6 +1,6 @@
 # Medical SLM — From Scratch to Deployment
 
-A 92M parameter small language model trained on PubMed biomedical abstracts.
+A 15M parameter small language model trained on PubMed biomedical abstracts.
 Built end-to-end in PyTorch — custom BPE tokenizer, decoder-only transformer,
 LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
@@ -10,12 +10,12 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
 | Component | Detail |
 |---|---|
-| Parameters | 92,426,752 (~92M) |
-| Layers | 20 transformer blocks |
-| Hidden dim | 512 |
-| Attention | Grouped Query Attention (8Q, 2KV heads) |
+| Parameters | 15,276,288 (~15M) |
+| Layers | 12 transformer blocks |
+| Hidden dim | 256 |
+| Attention | Grouped Query Attention (4Q, 2KV heads) |
 | Head dim | 64 |
-| FFN | SwiGLU (3 matrices, intermediate=2048) |
+| FFN | SwiGLU (3 matrices, intermediate=512) |
 | Positional encoding | Rotary (RoPE) — zero learnable params |
 | Normalization | RMSNorm (pre-norm) |
 | Context length | 1024 tokens |
@@ -27,9 +27,9 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
 ## Status
 
-- [x] Phase 1 — Data download (70K+ NCBI PubMed abstracts)
+- [x] Phase 1 — Data download (500K+ NCBI PubMed abstracts)
 - [x] Phase 1 — Custom BPE tokenizer (32K vocab, trained on medical text)
-- [x] Phase 1 — Data preparation pipeline (11M+ tokens, binary format)
+- [x] Phase 1 — Data preparation pipeline (70M+ tokens, binary format)
 - [x] Phase 2 — Transformer architecture from scratch
 - [ ] Phase 2 — Pretraining loop (in progress)
 - [ ] Phase 3 — HuggingFace port + LoRA fine-tuning
@@ -40,7 +40,7 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 ## Phase 1 — Data & Tokenization
 
 **Data**
-- 70,792 PubMed abstracts downloaded from NCBI FTP
+- 500K+ PubMed abstracts downloaded from NCBI FTP
 - Stored in `data/raw/pubmed_abstracts.txt`
 
 **Tokenizer**
@@ -50,9 +50,9 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 - Stored in `tokenizer/vocab.json` and `tokenizer/merges.txt`
 
 **Prepared Data**
-- `data/tokenized/train.bin` — 11,036,920 tokens (22.1MB)
-- `data/tokenized/val.bin` — 1,226,324 tokens (2.5MB)
-- Chunk size: 1024 tokens, 10,778 possible training chunks
+- `data/tokenized/train.bin` — 63,276,030 tokens (126.6MB)
+- `data/tokenized/val.bin` — 7,030,669 tokens (14.1MB)
+- Chunk size: 1024 tokens, 61,792 possible training chunks
 
 ---
 
@@ -60,11 +60,11 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
 **Model components built from scratch:**
 
-`RMSNorm` — normalization without mean subtraction, 512 learnable params per instance
+`RMSNorm` — normalization without mean subtraction, 256 learnable params per instance
 
 `RotaryEmbedding` — RoPE positional encoding, zero learnable params, precomputed cos/sin tables
 
-`GroupedQueryAttention` — 8 query heads share 2 KV heads, 4× KV cache reduction vs standard MHA, Flash Attention 2 via `F.scaled_dot_product_attention`
+`GroupedQueryAttention` — 4 query heads share 2 KV heads, 2× KV cache reduction vs standard MHA, Flash Attention 2 via `F.scaled_dot_product_attention`
 
 `SwiGLUFFN` — gated feed-forward with three weight matrices (W1, W2, W3), smoother gradients than ReLU
 
@@ -72,22 +72,21 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
 `MedSLM` — full decoder-only model, weight tying between embedding and LM head
 
+**Parameter breakdown:**
+
 ---
 
-**Parameter breakdown:**
-Embedding table:      16,384,000
-20 × TransformerBlock:
-Attention (GQA):       655,360
-FFN (SwiGLU):        3,145,728
-RMSNorm (×2):            1,024
-Per block:           3,802,112
-× 20 layers:        76,042,240
-Final RMSNorm:               512
+Embedding table:       8,192,000
+12 × TransformerBlock:
+Attention (GQA):       196,608
+FFN (SwiGLU):          393,216
+RMSNorm (×2):              512
+Per block:             590,336
+× 12 layers:         7,084,032
+Final RMSNorm:               256
 LM Head (weight tied):         0
 ─────────────────────────────────
-Total:                92,426,752
-
----
+Total:                15,276,288
 
 ---
 
@@ -101,7 +100,7 @@ Total:                92,426,752
 | Weight decay | 0.1 |
 | Gradient clipping | 1.0 |
 | Warmup steps | 1000 |
-| Max steps | 10,000 |
+| Max steps | 20,000 |
 | Batch size | 4 |
 | Grad accumulation | 16 (effective batch = 64) |
 | Precision | bf16 |
@@ -109,15 +108,28 @@ Total:                92,426,752
 
 ---
 
+## Training History
+
+| Run | Model size | Dataset | Steps | Train loss | Val loss | Perplexity |
+|---|---|---|---|---|---|---|
+| Run 1 | 92M params | 11M tokens | 10,000 | 0.15 | 8.59 | 5389 |
+| Run 2 | 15M params | 70M tokens | 20,000 | in progress | — | — |
+
+Run 1 showed severe overfitting — 92M parameters with only 11M tokens is heavily under-resourced.
+Run 2 addresses this with a smaller model and 6.4× more data.
+
+---
+
 ## Hardware
 
 - RTX 5070 (mobile), 8GB VRAM
-- Ryzen 9 8940hx, 24GB RAM
+- Ryzen AI 9 HX 370, 24GB RAM, Windows 11
 - PyTorch 2.12.0.dev+cu128, bf16 supported
 
 ---
 
 ## Setup
+
 ```bash
 conda create -n slm_env python=3.11
 conda activate slm_env
@@ -128,7 +140,9 @@ pip install transformers tokenizers accelerate wandb tqdm numpy
 ---
 
 ## Project Structure
-```
+
+---
+
 slm_medical/
 ├── data/
 │   ├── raw/
@@ -148,7 +162,8 @@ slm_medical/
 ├── download_data.py
 ├── train_tokenizer.py
 └── prepare_data.py
-```
+
+---
 
 ## About
 
