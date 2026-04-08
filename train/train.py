@@ -33,7 +33,7 @@ class TrainingConfig:
     save_every:       int   = 1000
     # paths
     checkpoint_dir:   str   = "checkpoints"
-    run_name:         str   = "medslm-pretrain"
+    run_name:         str   = "medslm-15m-pretrain"
     # device
     device:           str   = "cuda"
     dtype:            str   = "bfloat16"
