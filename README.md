@@ -74,7 +74,7 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 
 **Parameter breakdown:**
 
----
+```
 
 Embedding table:       8,192,000
 12 × TransformerBlock:
@@ -87,6 +87,7 @@ Final RMSNorm:               256
 LM Head (weight tied):         0
 ─────────────────────────────────
 Total:                15,276,288
+```
 
 ---
 
@@ -141,7 +142,7 @@ pip install transformers tokenizers accelerate wandb tqdm numpy
 
 ## Project Structure
 
----
+```
 
 slm_medical/
 ├── data/
