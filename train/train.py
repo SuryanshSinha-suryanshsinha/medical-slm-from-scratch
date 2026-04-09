@@ -37,6 +37,8 @@ class TrainingConfig:
     # device
     device:           str   = "cuda"
     dtype:            str   = "bfloat16"
+    # resume
+    resume_from:      str   = None
 
 
 class DataLoader:
@@ -57,11 +59,13 @@ class DataLoader:
         x, y = x.to(self.device), y.to(self.device)
         return x, y
 
+
 def get_lr(step: int, cfg: TrainingConfig) -> float:
     if step < cfg.warmup_steps:
         return cfg.lr * (step / cfg.warmup_steps)
     progress = (step - cfg.warmup_steps) / (cfg.max_steps - cfg.warmup_steps)
     return cfg.lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+
 
 def build_optimizer(model: MedSLM, cfg: TrainingConfig):
     decay_params = [p for n, p in model.named_parameters() if p.dim() >= 2]
@@ -78,6 +82,7 @@ def build_optimizer(model: MedSLM, cfg: TrainingConfig):
 
     optimizer = torch.optim.AdamW(param_groups, lr=cfg.lr, betas=cfg.betas)
     return optimizer
+
 
 def train_step(model, optimizer, scaler, loader, cfg, ctx):
     model.train()
@@ -102,8 +107,9 @@ def train_step(model, optimizer, scaler, loader, cfg, ctx):
 
     return total_loss
 
+
 @torch.no_grad()
-def evaluate(model, loader, cfg, ctx, num_batches=20):
+def val_step(model, loader, cfg, ctx, num_batches=20):
     model.eval()
     total_loss = 0.0
 
@@ -121,6 +127,7 @@ def evaluate(model, loader, cfg, ctx, num_batches=20):
     perplexity = math.exp(avg_loss)
     return avg_loss, perplexity
 
+
 def train(cfg: TrainingConfig):
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
     device = cfg.device
@@ -130,6 +137,15 @@ def train(cfg: TrainingConfig):
 
     model = MedSLM(cfg.model_config).to(device)
     optimizer = build_optimizer(model, cfg)
+
+    start_step = 0
+    if cfg.resume_from is not None:
+        print(f"Resuming from {cfg.resume_from}")
+        ckpt = torch.load(cfg.resume_from, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        start_step = ckpt['step'] + 1
+        print(f"Resuming from step {start_step}")
 
     train_loader = DataLoader(cfg.data_dir, 'train', cfg.batch_size, cfg.model_config.context_length, device)
     val_loader   = DataLoader(cfg.data_dir, 'val',   cfg.batch_size, cfg.model_config.context_length, device)
@@ -142,36 +158,51 @@ def train(cfg: TrainingConfig):
 
     t0 = time.time()
 
-    for step in range(cfg.max_steps):
-        lr = get_lr(step, cfg)
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+    try:
+        for step in range(start_step, cfg.max_steps):
+            lr = get_lr(step, cfg)
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr
 
-        loss = train_step(model, optimizer, scaler, train_loader, cfg, ctx)
+            loss = train_step(model, optimizer, scaler, train_loader, cfg, ctx)
 
-        if step % cfg.log_every == 0:
-            t1 = time.time()
-            dt = t1 - t0
-            t0 = t1
-            grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
-            print(f"step {step:5d} | loss {loss:.4f} | lr {lr:.2e} | dt {dt:.2f}s")
-            wandb.log({'train/loss': loss, 'train/lr': lr, 'train/grad_norm': grad_norm}, step=step)
+            if step % cfg.log_every == 0:
+                t1 = time.time()
+                dt = t1 - t0
+                t0 = t1
+                grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+                print(f"step {step:5d} | loss {loss:.4f} | lr {lr:.2e} | dt {dt:.2f}s")
+                wandb.log({'train/loss': loss, 'train/lr': lr, 'train/grad_norm': grad_norm}, step=step)
 
-        if step % cfg.eval_every == 0:
-            val_loss, val_ppl = evaluate(model, val_loader, cfg, ctx)
-            print(f"  val loss {val_loss:.4f} | perplexity {val_ppl:.2f}")
-            wandb.log({'val/loss': val_loss, 'val/perplexity': val_ppl}, step=step)
+            if step % cfg.eval_every == 0:
+                val_loss, val_ppl = val_step(model, val_loader, cfg, ctx)
+                print(f"  val loss {val_loss:.4f} | perplexity {val_ppl:.2f}")
+                wandb.log({'val/loss': val_loss, 'val/perplexity': val_ppl}, step=step)
 
-        if step % cfg.save_every == 0 and step > 0:
-            ckpt_path = os.path.join(cfg.checkpoint_dir, f'ckpt_step{step}.pt')
-            torch.save({
-                'step':                 step,
-                'model_state_dict':     model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss':                 loss,
-                'config':               cfg.model_config
-            }, ckpt_path)
-            print(f"  checkpoint saved → {ckpt_path}")
+            if step % cfg.save_every == 0 and step > 0:
+                ckpt_path = os.path.join(cfg.checkpoint_dir, f'ckpt_step{step}.pt')
+                torch.save({
+                    'step':                 step,
+                    'model_state_dict':     model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss':                 loss,
+                    'config':               cfg.model_config
+                }, ckpt_path)
+                print(f"  checkpoint saved → {ckpt_path}")
+
+    except KeyboardInterrupt:
+        print("\nTraining interrupted. Saving checkpoint...")
+        ckpt_path = os.path.join(cfg.checkpoint_dir, f'ckpt_interrupted_step{step}.pt')
+        torch.save({
+            'step':                 step,
+            'model_state_dict':     model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss':                 loss,
+            'config':               cfg.model_config
+        }, ckpt_path)
+        print(f"Checkpoint saved → {ckpt_path}")
+        wandb.finish()
+        return
 
     final_path = os.path.join(cfg.checkpoint_dir, 'medslm_final.pt')
     torch.save({'model_state_dict': model.state_dict(), 'config': cfg.model_config}, final_path)
@@ -181,5 +212,8 @@ def train(cfg: TrainingConfig):
 
 if __name__ == '__main__':
     model_cfg = ModelConfig()
-    cfg = TrainingConfig(model_config=model_cfg)
+    cfg = TrainingConfig(
+        model_config=model_cfg,
+        resume_from="checkpoints/ckpt_step8000.pt"
+    )
     train(cfg)
