@@ -31,7 +31,7 @@ LoRA fine-tuning on MedQA, and local deployment via FastAPI.
 - [x] Phase 1 — Custom BPE tokenizer (32K vocab, trained on medical text)
 - [x] Phase 1 — Data preparation pipeline (70M+ tokens, binary format)
 - [x] Phase 2 — Transformer architecture from scratch
-- [x] Phase 2 — Pretraining loop (in progress)
+- [x] Phase 2 — Pretraining loop 
 - [ ] Phase 3 — HuggingFace port + LoRA fine-tuning
 - [ ] Phase 4 — Quantization + deployment
 
